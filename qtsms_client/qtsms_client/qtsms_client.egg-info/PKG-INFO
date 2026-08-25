@@ -1,0 +1,296 @@
+Metadata-Version: 2.4
+Name: qtsms-client
+Version: 1.0.0
+Summary: Async Python client for Beeline A2P SMS Gateway - optimized for high-throughput SMS sending
+Author: Based on original PHP library by ISBC Group
+Maintainer: Python rewrite
+License: MIT
+Project-URL: Homepage, https://github.com/example/qtsms-client
+Project-URL: Repository, https://github.com/example/qtsms-client.git
+Project-URL: Documentation, https://github.com/example/qtsms-client#readme
+Keywords: sms,beeline,a2p,async,httpx,gateway,messaging
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Communications :: Telephony
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Framework :: AsyncIO
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.25.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+
+# QTSMS Client
+
+Async Python client for Beeline A2P SMS Gateway, rewritten from the original PHP library with optimizations for high-throughput SMS sending.
+
+## Features
+
+- **Fully Async**: Built on `httpx` for async HTTP operations
+- **High Performance**: Optimized for sending thousands of SMS messages concurrently
+- **Connection Pooling**: Efficient connection management for bulk operations
+- **Concurrent Requests**: Configurable concurrency limits for batch operations
+- **Legacy Compatible**: Maintains API compatibility with the original PHP interface
+- **Type Hints**: Full type annotations for better IDE support
+- **Comprehensive Tests**: Extensive test coverage
+
+## Installation
+
+```bash
+pip install qtsms-client
+```
+
+Or install from source:
+
+```bash
+cd qtsms_client
+pip install -e .
+```
+
+For development:
+
+```bash
+pip install -e ".[dev]"
+```
+
+## Quick Start
+
+### Basic Usage
+
+```python
+import asyncio
+from qtsms_client.src import QTSMSClient
+
+async def main():
+    async with QTSMSClient(
+        user="your_username",
+        password="your_password",
+        host="a2p-sms.beeline.ru"
+    ) as client:
+        # Send a single SMS
+        result = await client.send_sms(
+            message="Hello, World!",
+            target="+79991234567",
+            sender="MyCompany"
+        )
+        print(f"SMS sent: {result}")
+
+        # Check balance
+        balance = await client.get_balance()
+        print(f"Balance: {balance}")
+
+asyncio.run(main())
+```
+
+### High-Throughput Batch Sending
+
+```python
+import asyncio
+from qtsms_client.src import QTSMSClient
+
+async def send_bulk_sms():
+    async with QTSMSClient(
+        user="your_username",
+        password="your_password",
+        host="a2p-sms.beeline.ru",
+        max_connections=200,  # Increase connection pool
+    ) as client:
+        # Prepare messages
+        messages = [
+            {"message": f"Message {i}", "target": f"+7999123{i:04d}"}
+            for i in range(1000)
+        ]
+
+        # Send 1000 SMS with 50 concurrent requests
+        results = await client.send_sms_batch(messages, concurrency=50)
+        print(f"Sent {len(results)} messages")
+
+asyncio.run(send_bulk_sms())
+```
+
+## API Reference
+
+### QTSMSClient
+
+#### Constructor Parameters
+
+- `user` (str): Username for authentication
+- `password` (str): Password for authentication
+- `host` (str, optional): SMS gateway hostname (default: "https://a2p-sms.beeline.ru")
+- `path` (str, optional): API endpoint path (default: "/public/http/")
+- `timeout` (float, optional): Request timeout in seconds (default: 30.0)
+- `verify_ssl` (bool, optional): Enable SSL verification (default: True)
+- `cert_path` (str, optional): Path to CA certificate file
+- `proxy` (str, optional): Proxy server address ("ip:port")
+- `proxy_auth` (str, optional): Proxy authentication ("username:password")
+- `max_connections` (int, optional): Max connections in pool (default: 100)
+- `max_keepalive_connections` (int, optional): Max keep-alive connections (default: 50)
+
+#### Methods
+
+##### send_sms(message, target, sender=None, ...)
+
+Send a single SMS message.
+
+```python
+result = await client.send_sms(
+    message="Hello!",
+    target="+79991234567",  # or list of numbers
+    sender="MyCompany",
+    post_id="custom_id_123",
+)
+```
+
+##### send_sms_batch(messages, concurrency=20)
+
+Send multiple SMS messages concurrently.
+
+```python
+messages = [
+    {"message": "Hello 1", "target": "+79991234567"},
+    {"message": "Hello 2", "target": "+79991234568"},
+]
+results = await client.send_sms_batch(messages, concurrency=50)
+```
+
+##### get_balance()
+
+Check account balance.
+
+```python
+balance = await client.get_balance()
+```
+
+##### get_status(sms_id=None, sms_group_id=None, date_from=None, date_to=None)
+
+Get SMS delivery status.
+
+```python
+# By SMS ID
+status = await client.get_status(sms_id="12345")
+
+# By date range
+status = await client.get_status(
+    date_from="2024-01-01",
+    date_to="2024-01-02"
+)
+```
+
+##### get_inbox(sib_num=None, new_only=False, ...)
+
+Retrieve incoming messages.
+
+```python
+inbox = await client.get_inbox(
+    sib_num="1234",
+    new_only=True
+)
+```
+
+##### add_to_blacklist(phones)
+
+Add phone numbers to blacklist.
+
+```python
+await client.add_to_blacklist(["+79991234567", "+79991234568"])
+```
+
+##### remove_from_blacklist(phones)
+
+Remove phone numbers from blacklist.
+
+```python
+await client.remove_from_blacklist("+79991234567")
+```
+
+##### get_blacklist(per_page=None, page=None, search=None)
+
+Retrieve blacklist entries.
+
+```python
+blacklist = await client.get_blacklist(page=1, per_page=50)
+```
+
+### Legacy API (PHP-compatible)
+
+For compatibility with the original PHP interface:
+
+```python
+client.start_multipost()
+client.post_mes("Hello", "+79991234567", None, "Sender")
+client.post_mes("World", "+79991234568", None, "Sender")
+results = await client.process()
+```
+
+## Performance Optimization Tips
+
+1. **Increase Connection Pool**: For high-volume sending, increase `max_connections`:
+   ```python
+   client = QTSMSClient(..., max_connections=500)
+   ```
+
+2. **Tune Concurrency**: Adjust `concurrency` based on server capacity:
+   ```python
+   results = await client.send_sms_batch(messages, concurrency=100)
+   ```
+
+3. **Reuse Client**: Use context manager or keep client alive for multiple operations:
+   ```python
+   async with QTSMSClient(...) as client:
+       # Multiple operations
+       await client.send_sms(...)
+       await client.get_balance()
+   ```
+
+4. **Batch Operations**: Use `send_sms_batch` instead of individual calls for bulk sending.
+
+## Error Handling
+
+```python
+from qtsms_client.src import QTSMSRequestError, QTSMSValidationError
+
+try:
+    result = await client.send_sms("Hello", "+79991234567")
+except QTSMSValidationError as e:
+    print(f"Invalid parameters: {e}")
+except QTSMSRequestError as e:
+    print(f"Request failed: {e}, status={e.status_code}")
+```
+
+## Running Tests
+
+```bash
+cd qtsms_client
+pytest tests/ -v
+```
+
+With coverage:
+
+```bash
+pytest tests/ -v --cov=qtsms_client.src
+```
+
+## License
+
+Based on the original PHP library by ISBC Group. Python rewrite is available under the MIT License.
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `pytest tests/ -v`
+5. Submit a pull request
