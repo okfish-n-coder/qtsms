@@ -1,8 +1,43 @@
-```php
-<?php
-// PHP class for QTSMS functionality
-class QTSMS {
-    // Class implementation here
-}
-?>
+```
+# Compiled and build artifacts
+*.class
+*.pyc
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+
+# Dependencies
+vendor/
+composer.lock
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# PHP specific
+*.phar
+.php_cs.cache
 ```
