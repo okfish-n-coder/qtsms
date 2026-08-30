@@ -33,6 +33,7 @@ classifiers = [
 requires-python = ">=3.8"
 dependencies = [
     "httpx>=0.25.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
