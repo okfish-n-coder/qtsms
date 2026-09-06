@@ -3,9 +3,13 @@ Async HTTP client for QTSMS gateway.
 
 Optimized for high-throughput SMS sending with connection pooling,
 concurrent requests, and efficient resource management.
+
+Supports both traditional username/password authentication and
+token-based authentication via X-ApiKey header.
 """
 
 import asyncio
+import json
 from typing import Optional, Dict, Any, List, Union
 from urllib.parse import urlparse, urlunparse
 
@@ -21,7 +25,55 @@ from .actions import (
     BlacklistAddAction,
     BlacklistDeleteAction,
 )
-from .exceptions import QTSMSException, QTSMSRequestError, QTSMSValidationError
+from .exceptions import (
+    QTSMSException,
+    QTSMSRequestError,
+    QTSMSValidationError,
+    QTSMSAuthError,
+    QTMSErrorCode,
+    QTMSParseResponseError,
+)
+from .schemas import (
+    TokenAuthConfig,
+    SendSMSRequest,
+    StatusRequest,
+    BalanceRequest,
+    InboxRequest,
+    BlacklistRequest,
+    BlacklistAddRequest,
+    BlacklistDeleteRequest,
+    SMSResponse,
+)
+
+__all__ = [
+    "QTSMSClient",
+    # Actions
+    "BaseAction",
+    "SendSMSAction",
+    "StatusAction",
+    "BalanceAction",
+    "InboxAction",
+    "BlacklistAction",
+    "BlacklistAddAction",
+    "BlacklistDeleteAction",
+    # Exceptions
+    "QTSMSException",
+    "QTSMSValidationError",
+    "QTSMSRequestError",
+    "QTSMSAuthError",
+    "QTMSErrorCode",
+    "QTMSParseResponseError",
+    # Schemas
+    "TokenAuthConfig",
+    "SendSMSRequest",
+    "StatusRequest",
+    "BalanceRequest",
+    "InboxRequest",
+    "BlacklistRequest",
+    "BlacklistAddRequest",
+    "BlacklistDeleteRequest",
+    "SMSResponse",
+]
 
 
 class QTSMSClient:
@@ -34,8 +86,10 @@ class QTSMSClient:
     - Batch SMS operations
     - Proxy support
     - SSL certificate validation control
+    - Token-based authentication (X-ApiKey header)
+    - JSON format requests/responses
 
-    Usage:
+    Usage with username/password:
         async with QTSMSClient(user="login", password="pass", host="sms.beeline.ru") as client:
             # Send single SMS
             result = await client.send_sms("Hello", "+79991234567", sender="MyCompany")
@@ -48,18 +102,31 @@ class QTSMSClient:
 
             # Check balance
             balance = await client.get_balance()
+
+    Usage with API token:
+        async with QTSMSClient.with_token_auth(
+            api_key="your_api_token",
+            host="sms.beeline.ru"
+        ) as client:
+            # Send SMS using token auth
+            result = await client.send_sms_json(
+                message="Hello",
+                target="+79991234567",
+                sender="MyCompany"
+            )
     """
 
     DEFAULT_HOST = "https://a2p-sms.beeline.ru"
     DEFAULT_PATH = "/public/http/"
+    REST_PATH = "/proto/http/rest"  # For JSON/token auth
     DEFAULT_TIMEOUT = 30.0
     DEFAULT_MAX_CONNECTIONS = 100
     DEFAULT_MAX_KEEPALIVE_CONNECTIONS = 50
 
     def __init__(
         self,
-        user: str,
-        password: str,
+        user: Optional[str] = None,
+        password: Optional[str] = None,
         host: Optional[str] = None,
         path: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
@@ -69,15 +136,17 @@ class QTSMSClient:
         proxy_auth: Optional[str] = None,
         max_connections: int = DEFAULT_MAX_CONNECTIONS,
         max_keepalive_connections: int = DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+        api_key: Optional[str] = None,
+        use_json: bool = False,
     ):
         """
         Initialize the QTSMS client.
 
         Args:
-            user: Username for authentication
-            password: Password for authentication
+            user: Username for authentication (optional if using api_key)
+            password: Password for authentication (optional if using api_key)
             host: SMS gateway hostname (with or without scheme)
-            path: API endpoint path
+            path: API endpoint path (use REST_PATH for JSON/token auth)
             timeout: Request timeout in seconds
             verify_ssl: Enable SSL certificate verification
             cert_path: Path to CA certificate file
@@ -85,10 +154,22 @@ class QTSMSClient:
             proxy_auth: Proxy authentication (format: "username:password")
             max_connections: Maximum number of connections in the pool
             max_keepalive_connections: Maximum keep-alive connections
+            api_key: API token for authentication (alternative to user/password)
+            use_json: Use JSON format for requests (required for token auth)
         """
         self.user = user
         self.password = password
-        self.base_url = self._build_base_url(host or self.DEFAULT_HOST, path or self.DEFAULT_PATH)
+        self.api_key = api_key
+        self.use_json = use_json
+        
+        # Determine base URL based on auth method
+        if api_key and use_json:
+            # Token auth requires /rest endpoint
+            default_path = self.REST_PATH
+        else:
+            default_path = self.DEFAULT_PATH
+            
+        self.base_url = self._build_base_url(host or self.DEFAULT_HOST, path or default_path)
         self.timeout = timeout
         self.verify_ssl = verify_ssl
         self.cert_path = cert_path
@@ -102,6 +183,70 @@ class QTSMSClient:
         self._client: Optional[httpx.AsyncClient] = None
         self._multipost_mode = False
         self._pending_actions: List[BaseAction] = []
+        
+        # Validate auth configuration
+        if not user and not password and not api_key:
+            raise QTSMSValidationError("Either user/password or api_key must be provided")
+        if api_key and (user or password):
+            raise QTSMSValidationError("Cannot use both api_key and user/password authentication")
+
+    @classmethod
+    def with_token_auth(
+        cls,
+        api_key: str,
+        host: Optional[str] = None,
+        timeout: float = DEFAULT_TIMEOUT,
+        verify_ssl: bool = True,
+        cert_path: Optional[str] = None,
+        proxy: Optional[str] = None,
+        proxy_auth: Optional[str] = None,
+        max_connections: int = DEFAULT_MAX_CONNECTIONS,
+        max_keepalive_connections: int = DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+    ) -> "QTSMSClient":
+        """
+        Create a client instance with token-based authentication.
+
+        Token auth uses X-ApiKey header and JSON format as per Beeline API docs.
+        The /rest endpoint is automatically used.
+
+        Args:
+            api_key: Your API token from Beeline A2P cabinet
+            host: SMS gateway hostname
+            timeout: Request timeout in seconds
+            verify_ssl: Enable SSL certificate verification
+            cert_path: Path to CA certificate file
+            proxy: Proxy server address
+            proxy_auth: Proxy authentication
+            max_connections: Maximum number of connections
+            max_keepalive_connections: Maximum keep-alive connections
+
+        Returns:
+            QTSMSClient instance configured for token auth
+
+        Example:
+            async with QTSMSClient.with_token_auth(
+                api_key="GvEqzI1TSmw7bDn)JC4wG424u8Po5txpC7S$tiU:KJ/x4I+Udb"
+            ) as client:
+                result = await client.send_sms_json(
+                    message="Hello",
+                    target="+79991234567",
+                    sender="MyCompany"
+                )
+        """
+        config = TokenAuthConfig(api_key=api_key)
+        return cls(
+            api_key=config.api_key,
+            host=host,
+            path=cls.REST_PATH,
+            timeout=timeout,
+            verify_ssl=verify_ssl,
+            cert_path=cert_path,
+            proxy=proxy,
+            proxy_auth=proxy_auth,
+            max_connections=max_connections,
+            max_keepalive_connections=max_keepalive_connections,
+            use_json=True,
+        )
 
     def _build_base_url(self, host: str, path: str) -> str:
         """Build base URL ensuring proper scheme."""
@@ -129,10 +274,21 @@ class QTSMSClient:
 
         transport = httpx.AsyncHTTPTransport(limits=limits)
 
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "User-Agent": "AISMS Python Client",
-        }
+        # Set headers based on auth method
+        if self.api_key:
+            # Token authentication via X-ApiKey header (as per Beeline API docs)
+            headers = {
+                "Content-Type": "application/json; charset=UTF-8",
+                "User-Agent": "AISMS Python Client",
+                "X-ApiKey": f"ApiKey {self.api_key}",
+            }
+        else:
+            # Traditional username/password authentication
+            content_type = "application/json" if self.use_json else "application/x-www-form-urlencoded; charset=UTF-8"
+            headers = {
+                "Content-Type": content_type,
+                "User-Agent": "AISMS Python Client",
+            }
 
         proxies = None
         if self.proxy:
@@ -169,6 +325,9 @@ class QTSMSClient:
 
     def _get_auth_params(self) -> Dict[str, Any]:
         """Get authentication parameters for requests."""
+        if self.api_key:
+            # Token auth doesn't need user/pass in request body
+            return {}
         return {
             "user": self.user,
             "pass": self.password,
@@ -191,21 +350,182 @@ class QTSMSClient:
         if not self._client:
             await self._create_client()
 
-        post_data = self._get_auth_params()
-        post_data.update(action.form_post_fields())
+        if self.use_json or self.api_key:
+            # JSON format request
+            post_data = self._get_auth_params()
+            post_data.update(action.form_post_fields())
+            
+            try:
+                response = await self._client.post("", json=post_data)
+                response.raise_for_status()
+                return response.text
+            except httpx.HTTPStatusError as e:
+                raise QTSMSRequestError(
+                    f"HTTP error: {e.response.status_code}",
+                    status_code=e.response.status_code,
+                    response=e.response.text,
+                )
+            except httpx.RequestError as e:
+                raise QTSMSRequestError(f"Request failed: {str(e)}")
+        else:
+            # Form-urlencoded request (traditional)
+            post_data = self._get_auth_params()
+            post_data.update(action.form_post_fields())
+
+            try:
+                response = await self._client.post("", data=post_data)
+                response.raise_for_status()
+                return response.text
+            except httpx.HTTPStatusError as e:
+                raise QTSMSRequestError(
+                    f"HTTP error: {e.response.status_code}",
+                    status_code=e.response.status_code,
+                    response=e.response.text,
+                )
+            except httpx.RequestError as e:
+                raise QTSMSRequestError(f"Request failed: {str(e)}")
+
+    async def execute_json(self, payload: Dict[str, Any]) -> SMSResponse:
+        """
+        Execute a raw JSON request with validation.
+
+        Args:
+            payload: JSON payload dictionary
+
+        Returns:
+            Parsed SMSResponse object
+            
+        Raises:
+            QTSMSValidationError: If payload validation fails
+            QTSMSRequestError: If request fails
+            QTMSParseResponseError: If response parsing fails
+        """
+        if not self._client:
+            await self._create_client()
+
+        # Validate payload based on action type
+        action = payload.get("action")
+        try:
+            if action == "post_sms":
+                validated = SendSMSRequest(**payload)
+            elif action == "status":
+                validated = StatusRequest(**payload)
+            elif action == "balance":
+                validated = BalanceRequest(**payload)
+            elif action == "inbox":
+                validated = InboxRequest(**payload)
+            elif action == "blacklist":
+                validated = BlacklistRequest(**payload)
+            elif action == "blacklist_add":
+                validated = BlacklistAddRequest(**payload)
+            elif action == "blacklist_delete":
+                validated = BlacklistDeleteRequest(**payload)
+            else:
+                raise QTSMSValidationError(f"Unknown action: {action}")
+        except Exception as e:
+            if isinstance(e, QTSMSValidationError):
+                raise
+            raise QTSMSValidationError(f"Invalid request payload: {str(e)}")
 
         try:
-            response = await self._client.post("", data=post_data)
+            response = await self._client.post("", json=payload)
             response.raise_for_status()
-            return response.text
+            
+            # Parse JSON response
+            try:
+                response_data = response.json()
+                return SMSResponse(**response_data)
+            except Exception as parse_error:
+                raise QTMSParseResponseError(
+                    f"Failed to parse response: {str(parse_error)}",
+                    raw_response=response.text
+                )
         except httpx.HTTPStatusError as e:
+            # Try to parse error from response
+            error_msg = f"HTTP error: {e.response.status_code}"
+            try:
+                error_data = e.response.json()
+                if "error" in error_data:
+                    error_code = error_data["error"].get("code")
+                    if error_code:
+                        human_msg = QTMSErrorCode.get_error_message(int(error_code))
+                        error_msg = f"{error_msg} - {human_msg}"
+            except:
+                pass
             raise QTSMSRequestError(
-                f"HTTP error: {e.response.status_code}",
+                error_msg,
                 status_code=e.response.status_code,
                 response=e.response.text,
             )
         except httpx.RequestError as e:
             raise QTSMSRequestError(f"Request failed: {str(e)}")
+
+    async def send_sms_json(
+        self,
+        message: str,
+        target: Union[str, List[str]],
+        sender: Optional[str] = None,
+        phl_codename: Optional[str] = None,
+        post_id: Optional[str] = None,
+        period: Optional[str] = None,
+        shorten_links: bool = False,
+        **kwargs,
+    ) -> SMSResponse:
+        """
+        Send SMS using JSON format with Pydantic validation.
+
+        Supports both traditional and token-based authentication.
+
+        Args:
+            message: SMS text content
+            target: Phone number(s) - single string or list
+            sender: Sender name/number
+            phl_codename: Contact list codename (alternative to target)
+            post_id: Custom post identifier
+            period: Message validity period
+            shorten_links: Auto-shorten URLs in message
+            **kwargs: Additional parameters
+
+        Returns:
+            SMSResponse object with parsed response data
+            
+        Example:
+            result = await client.send_sms_json(
+                message="Hello World",
+                target="+79991234567",
+                sender="MyCompany",
+                shorten_links=True
+            )
+            print(f"SMS ID: {result.actions[0].id if result.actions else 'N/A'}")
+        """
+        if isinstance(target, list):
+            target = ",".join(str(t) for t in target)
+
+        payload = {
+            "action": "post_sms",
+            "message": message,
+            "target": target,
+        }
+        
+        if sender:
+            payload["sender"] = sender
+        if phl_codename:
+            payload["phl_codename"] = phl_codename
+        if post_id:
+            payload["post_id"] = post_id
+        if period:
+            payload["period"] = period
+        if shorten_links:
+            payload["shortenLinks"] = True
+            
+        payload.update(kwargs)
+        
+        # Add auth params if using user/password
+        if not self.api_key:
+            payload["user"] = self.user
+            payload["pass"] = self.password
+
+        return await self.execute_json(payload)
 
     async def execute_batch(
         self,

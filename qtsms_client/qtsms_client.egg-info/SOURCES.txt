@@ -4,6 +4,7 @@ qtsms_client/__init__.py
 qtsms_client/actions.py
 qtsms_client/client.py
 qtsms_client/exceptions.py
+qtsms_client/schemas.py
 qtsms_client.egg-info/PKG-INFO
 qtsms_client.egg-info/SOURCES.txt
 qtsms_client.egg-info/dependency_links.txt
