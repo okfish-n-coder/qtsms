@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import sys
 from qtsms_client import QTSMSClient, QTMSErrorCode
 
@@ -60,6 +61,16 @@ def print_error(error: Exception, error_code_class, verbose: bool = False):
         traceback.print_exc()
 
 
+async def send_sms_async(client, phone, text, sender, batch_id):
+    """Send SMS using the async client."""
+    return await client.send_sms(
+        message=text,
+        target=phone,
+        sender=sender,
+        post_id=batch_id
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Send SMS via Beeline A2P Gateway",
@@ -98,12 +109,13 @@ Examples:
             if args.sender:
                 print(f"Sender: {args.sender}")
         
-        response = client.send_sms(
+        response = asyncio.run(send_sms_async(
+            client,
             phone=args.phone,
             text=args.text,
             sender=args.sender,
             batch_id=args.batch_id
-        )
+        ))
         
         print_success(response, args.verbose)
         return 0
