@@ -13,15 +13,16 @@ Usage:
 """
 
 import argparse
+import asyncio
 import sys
 from qtsms_client import QTSMSClient, QTMSErrorCode
 
 
-def create_client(user: str = None, password: str = None, token: str = None) -> QTSMSClient:
+def create_client(user: str = None, password: str = None, token: str = None, host: str = None) -> QTSMSClient:
     """Create QTSMSClient with appropriate authentication method."""
     if token:
-        return QTSMSClient.with_token_auth(api_key=token)
-    return QTSMSClient(user=user, password=password)
+        return QTSMSClient.with_token_auth(api_key=token, host=host)
+    return QTSMSClient(user=user, password=password, host=host)
 
 
 def print_success(response, verbose: bool = False):
@@ -60,6 +61,16 @@ def print_error(error: Exception, error_code_class, verbose: bool = False):
         traceback.print_exc()
 
 
+async def send_sms_async(client, phone, text, sender, batch_id):
+    """Send SMS using the async client."""
+    return await client.send_sms(
+        message=text,
+        target=phone,
+        sender=sender,
+        post_id=batch_id
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Send SMS via Beeline A2P Gateway",
@@ -80,6 +91,7 @@ Examples:
     parser.add_argument("--text", type=str, required=True, help="SMS message text")
     parser.add_argument("--sender", type=str, default=None, help="Sender name (alphanumeric ID)")
     parser.add_argument("--batch-id", type=str, default=None, help="Optional batch ID")
+    parser.add_argument("--host", type=str, default=None, help="SMS gateway host (default: a2p-sms.beeline.ru)")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     
     args = parser.parse_args()
@@ -90,20 +102,23 @@ Examples:
         return 1
     
     try:
-        client = create_client(user=args.user, password=args.password, token=args.token)
+        client = create_client(user=args.user, password=args.password, token=args.token, host=args.host)
         
         if args.verbose:
             print(f"Sending SMS to {args.phone}")
             print(f"Message: {args.text}")
             if args.sender:
                 print(f"Sender: {args.sender}")
+            if args.host:
+                print(f"Host: {args.host}")
         
-        response = client.send_sms(
+        response = asyncio.run(send_sms_async(
+            client,
             phone=args.phone,
             text=args.text,
             sender=args.sender,
             batch_id=args.batch_id
-        )
+        ))
         
         print_success(response, args.verbose)
         return 0

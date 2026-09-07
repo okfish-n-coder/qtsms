@@ -8,8 +8,18 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Install SSL certificates and openssl for proper TLS handshake in slim images
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssl \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
+
 # Copy project files
 COPY qtsms_client/ /app/
+COPY examples/ /app/examples/
+COPY tests/ /app/tests/
+COPY pyproject.toml /app/
 
 # Install the package and dev dependencies (includes pytest, pytest-asyncio, pydantic)
 RUN pip install --no-cache-dir ".[dev]"

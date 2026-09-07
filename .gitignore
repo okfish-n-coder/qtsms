@@ -1,2 +1,4 @@
-# Examples
-examples/
+```
+__pycache__/
+*.pyc
+```
