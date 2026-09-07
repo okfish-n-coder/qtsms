@@ -279,7 +279,7 @@ class QTSMSClient:
             # Token authentication via X-ApiKey header (as per Beeline API docs)
             headers = {
                 "Content-Type": "application/json; charset=UTF-8",
-                "User-Agent": "AISMS Python Client",
+                "User-Agent": "QTSMS Python Client",
                 "X-ApiKey": f"ApiKey {self.api_key}",
             }
         else:
@@ -287,7 +287,7 @@ class QTSMSClient:
             content_type = "application/json" if self.use_json else "application/x-www-form-urlencoded; charset=UTF-8"
             headers = {
                 "Content-Type": content_type,
-                "User-Agent": "AISMS Python Client",
+                "User-Agent": "QTSMS Python Client",
             }
 
         proxies = None

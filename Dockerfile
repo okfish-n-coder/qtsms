@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy project files
 COPY qtsms_client/ /app/
 COPY examples/ /app/examples/
-COPY tests/ /app/tests/
 
 # Install the package and dev dependencies
 RUN pip install --no-cache-dir ".[dev]"
@@ -19,4 +18,4 @@ RUN pip install --no-cache-dir ".[dev]"
 # Default command: run tests
 # To run the example: docker run --rm qtsms-client python examples/send_sms.py --help
 # Or: docker run --rm qtsms-client python examples/send_sms.py --api-key KEY --phone +79991234567 --text "Hello"
-CMD ["pytest", "tests/", "-v", "--tb=short"]
+CMD ["pytest", "/app/tests/", "-v", "--tb=short"]
