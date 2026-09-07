@@ -23,4 +23,6 @@ coverage.xml
 .git/modules/
 .DS_Store
 Thumbs.db
-```
+
+.idea/
+*.egg-info/
