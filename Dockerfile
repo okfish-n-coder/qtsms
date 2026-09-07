@@ -1,4 +1,4 @@
-# Dockerfile for running QTSMS client tests
+# Dockerfile for running QTSMS client tests and examples
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -10,9 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy project files
 COPY qtsms_client/ /app/
+COPY examples/ /app/examples/
+COPY tests/ /app/tests/
 
 # Install the package and dev dependencies
 RUN pip install --no-cache-dir ".[dev]"
 
-# Run tests by default
+# Default command: run tests
+# To run the example: docker run --rm qtsms-client python examples/send_sms.py --help
+# Or: docker run --rm qtsms-client python examples/send_sms.py --api-key KEY --phone +79991234567 --text "Hello"
 CMD ["pytest", "tests/", "-v", "--tb=short"]
