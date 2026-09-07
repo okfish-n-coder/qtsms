@@ -8,7 +8,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from qtsms_client.src.actions import (
+from qtsms_client.actions import (
     BaseAction,
     SendSMSAction,
     StatusAction,
@@ -18,12 +18,12 @@ from qtsms_client.src.actions import (
     BlacklistAddAction,
     BlacklistDeleteAction,
 )
-from qtsms_client.src.exceptions import (
+from qtsms_client.exceptions import (
     QTSMSException,
     QTSMSValidationError,
     QTSMSRequestError,
 )
-from qtsms_client.src.client import QTSMSClient
+from qtsms_client.client import QTSMSClient
 
 
 class TestSendSMSAction:
