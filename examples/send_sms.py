@@ -3,14 +3,72 @@
 Example CLI utility to send SMS via Beeline A2P Gateway.
 
 Usage:
-    python send_sms.py --api-key YOUR_API_KEY --phone +79991234567 --text "Hello from Beeline!"
-    python send_sms.py --token YOUR_TOKEN --phone +79991234567 --text "Hello from Beeline!"
+    # With username/password authentication
+    python send_sms.py --user my_login --password my_pass --phone +79991234567 --text "Hello!"
+    
+    # With token authentication (X-ApiKey header)
+    python send_sms.py --token YOUR_TOKEN --phone +79991234567 --text "Hello!"
+    
     python send_sms.py --help
 """
 
 import argparse
+import asyncio
 import sys
 from qtsms_client import QTSMSClient, QTMSErrorCode
+
+
+def create_client(user: str = None, password: str = None, token: str = None, host: str = None) -> QTSMSClient:
+    """Create QTSMSClient with appropriate authentication method."""
+    if token:
+        return QTSMSClient.with_token_auth(api_key=token, host=host)
+    return QTSMSClient(user=user, password=password, host=host)
+
+
+def print_success(response, verbose: bool = False):
+    """Print successful SMS send result."""
+    if hasattr(response, 'actions'):
+        for action in response.actions:
+            print(f"✓ Message sent successfully!")
+            print(f"  Phone: {action.phone}")
+            print(f"  Status: {action.status}")
+            if action.batch_id:
+                print(f"  Batch ID: {action.batch_id}")
+            if hasattr(action, 'id') and action.id:
+                print(f"  Message ID: {action.id}")
+    else:
+        print(f"✓ SMS sent successfully")
+        if isinstance(response, dict):
+            for key, value in response.items():
+                print(f"  {key}: {value}")
+
+
+def print_error(error: Exception, error_code_class, verbose: bool = False):
+    """Print error with description if available."""
+    error_msg = str(error)
+    print(f"✗ Error: {error_msg}", file=sys.stderr)
+    
+    # Try to find error code in message
+    for code, _ in error_code_class.get_all_errors().items():
+        if code.lower() in error_msg.lower():
+            description = error_code_class.get_error_message(code)
+            print(f"  Error code: {code}", file=sys.stderr)
+            print(f"  Description: {description}", file=sys.stderr)
+            break
+    
+    if verbose:
+        import traceback
+        traceback.print_exc()
+
+
+async def send_sms_async(client, phone, text, sender, batch_id):
+    """Send SMS using the async client."""
+    return await client.send_sms(
+        message=text,
+        target=phone,
+        sender=sender,
+        post_id=batch_id
+    )
 
 
 def main():
@@ -19,134 +77,54 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --api-key my_api_key --phone +79991234567 --text "Hello World"
+  %(prog)s --user my_login --password my_pass --phone +79991234567 --text "Hello World"
   %(prog)s --token my_token --phone +79991234567 --text "Hello World" --sender MyCompany
-  %(prog)s --api-key my_api_key --phone +79991234567 --text "Test" --use-json
         """
     )
     
-    # Authentication options (mutually exclusive group)
     auth_group = parser.add_mutually_exclusive_group(required=True)
-    auth_group.add_argument(
-        "--api-key",
-        type=str,
-        help="API key for basic authentication"
-    )
-    auth_group.add_argument(
-        "--token",
-        type=str,
-        help="Token for X-ApiKey header authentication"
-    )
+    auth_group.add_argument("--user", type=str, help="Username for authentication")
+    auth_group.add_argument("--token", type=str, help="Token for X-ApiKey header authentication")
     
-    # Required arguments
-    parser.add_argument(
-        "--phone",
-        type=str,
-        required=True,
-        help="Recipient phone number in international format (e.g., +79991234567)"
-    )
-    parser.add_argument(
-        "--text",
-        type=str,
-        required=True,
-        help="SMS message text"
-    )
-    
-    # Optional arguments
-    parser.add_argument(
-        "--sender",
-        type=str,
-        default=None,
-        help="Sender name (alphanumeric sender ID)"
-    )
-    parser.add_argument(
-        "--use-json",
-        action="store_true",
-        help="Use JSON format for request (default: XML)"
-    )
-    parser.add_argument(
-        "--batch-id",
-        type=str,
-        default=None,
-        help="Optional batch ID for grouping messages"
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output"
-    )
+    parser.add_argument("--password", type=str, required=False, help="Password for authentication (required with --user)")
+    parser.add_argument("--phone", type=str, required=True, help="Recipient phone (e.g., +79991234567)")
+    parser.add_argument("--text", type=str, required=True, help="SMS message text")
+    parser.add_argument("--sender", type=str, default=None, help="Sender name (alphanumeric ID)")
+    parser.add_argument("--batch-id", type=str, default=None, help="Optional batch ID")
+    parser.add_argument("--host", type=str, default=None, help="SMS gateway host (default: a2p-sms.beeline.ru)")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     
     args = parser.parse_args()
     
+    # Validate that password is provided when using user auth
+    if args.user and not args.password:
+        print("Error: --password is required when using --user", file=sys.stderr)
+        return 1
+    
     try:
-        # Initialize client based on authentication method
-        if args.api_key:
-            if args.verbose:
-                print(f"Initializing client with API key: {args.api_key[:4]}...")
-            client = QTSMSClient(api_key=args.api_key, use_json=args.use_json)
-        else:
-            if args.verbose:
-                print(f"Initializing client with token auth")
-            client = QTSMSClient.with_token_auth(api_key=args.token, use_json=args.use_json)
+        client = create_client(user=args.user, password=args.password, token=args.token, host=args.host)
         
         if args.verbose:
             print(f"Sending SMS to {args.phone}")
             print(f"Message: {args.text}")
             if args.sender:
                 print(f"Sender: {args.sender}")
-            print(f"Using JSON format: {args.use_json}")
+            if args.host:
+                print(f"Host: {args.host}")
         
-        # Send SMS
-        response = client.send_sms(
+        response = asyncio.run(send_sms_async(
+            client,
             phone=args.phone,
             text=args.text,
             sender=args.sender,
             batch_id=args.batch_id
-        )
+        ))
         
-        if args.verbose:
-            print("\n=== Response ===")
-            print(f"Raw response: {response}")
-        
-        # Parse and display result
-        if hasattr(response, 'actions'):
-            # Pydantic model response (JSON mode)
-            for action in response.actions:
-                print(f"✓ Message sent successfully!")
-                print(f"  Phone: {action.phone}")
-                print(f"  Status: {action.status}")
-                print(f"  Batch ID: {action.batch_id}")
-                if hasattr(action, 'id') and action.id:
-                    print(f"  Message ID: {action.id}")
-        else:
-            # XML response or simple success
-            print(f"✓ SMS sent successfully to {args.phone}")
-            if isinstance(response, dict):
-                for key, value in response.items():
-                    print(f"  {key}: {value}")
-        
+        print_success(response, args.verbose)
         return 0
         
     except Exception as e:
-        error_msg = str(e)
-        print(f"✗ Error: {error_msg}", file=sys.stderr)
-        
-        # Try to provide helpful error messages
-        error_code = None
-        for code, _ in QTMSErrorCode.get_all_errors().items():
-            if code.lower() in error_msg.lower():
-                error_code = code
-                break
-        
-        if error_code:
-            description = QTMSErrorCode.get_error_message(error_code)
-            print(f"  Error code: {error_code}", file=sys.stderr)
-            print(f"  Description: {description}", file=sys.stderr)
-        
-        if args.verbose:
-            import traceback
-            traceback.print_exc()
-        
+        print_error(e, QTMSErrorCode, args.verbose)
         return 1
 
 
