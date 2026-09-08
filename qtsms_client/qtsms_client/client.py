@@ -122,6 +122,7 @@ class QTSMSClient:
     DEFAULT_TIMEOUT = 30.0
     DEFAULT_MAX_CONNECTIONS = 100
     DEFAULT_MAX_KEEPALIVE_CONNECTIONS = 50
+    DEFAULT_POOL_TIMEOUT = 60.0  # Longer timeout for initial connection pool setup
 
     def __init__(
         self,
@@ -272,7 +273,11 @@ class QTSMSClient:
             max_keepalive_connections=self.max_keepalive_connections,
         )
 
-        transport = httpx.AsyncHTTPTransport(limits=limits)
+        # Use longer timeout for initial connection pool setup to avoid first-request timeouts
+        transport = httpx.AsyncHTTPTransport(
+            limits=limits,
+            retries=1,  # Retry once on connection failures
+        )
 
         # Set headers based on auth method
         if self.api_key:

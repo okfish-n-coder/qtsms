@@ -8,10 +8,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install SSL certificates and openssl for proper TLS handshake in slim images
+# Install curl first to pull in all necessary SSL/TLS libraries and configurations
+# python:slim images sometimes lack proper SSL setup that curl brings automatically
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    openssl \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && update-ca-certificates
 
