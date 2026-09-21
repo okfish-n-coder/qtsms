@@ -9,9 +9,11 @@ token-based authentication via X-ApiKey header.
 """
 
 import asyncio
-import json
+# import json
 from typing import Optional, Dict, Any, List, Union
 from urllib.parse import urlparse, urlunparse
+
+import logging
 
 import httpx
 
@@ -75,6 +77,7 @@ __all__ = [
     "SMSResponse",
 ]
 
+logger = logging.getLogger('httpx')
 
 class QTSMSClient:
     """
@@ -116,8 +119,8 @@ class QTSMSClient:
             )
     """
 
-    DEFAULT_HOST = "https://a2p-sms.beeline.ru"
-    DEFAULT_PATH = "/public/http/"
+    DEFAULT_HOST = "https://a2p-sms-https.beeline.ru"
+    DEFAULT_PATH = "/proto/http"
     REST_PATH = "/proto/http/rest"  # For JSON/token auth
     DEFAULT_TIMEOUT = 30.0
     DEFAULT_MAX_CONNECTIONS = 100
@@ -130,7 +133,7 @@ class QTSMSClient:
         host: Optional[str] = None,
         path: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
-        verify_ssl: bool = True,
+        verify_ssl: bool = False,
         cert_path: Optional[str] = None,
         proxy: Optional[str] = None,
         proxy_auth: Optional[str] = None,
@@ -163,7 +166,7 @@ class QTSMSClient:
         self.use_json = use_json
         
         # Determine base URL based on auth method
-        if api_key and use_json:
+        if api_key or use_json:
             # Token auth requires /rest endpoint
             default_path = self.REST_PATH
         else:
@@ -272,7 +275,7 @@ class QTSMSClient:
             max_keepalive_connections=self.max_keepalive_connections,
         )
 
-        transport = httpx.AsyncHTTPTransport(limits=limits)
+        transport = httpx.AsyncHTTPTransport(limits=limits, retries=1)
 
         # Set headers based on auth method
         if self.api_key:
@@ -284,7 +287,7 @@ class QTSMSClient:
             }
         else:
             # Traditional username/password authentication
-            content_type = "application/json" if self.use_json else "application/x-www-form-urlencoded; charset=UTF-8"
+            content_type = "application/json; charset=UTF-8" if self.use_json else "application/x-www-form-urlencoded; charset=UTF-8"
             headers = {
                 "Content-Type": content_type,
                 "User-Agent": "QTSMS Python Client",
@@ -314,7 +317,9 @@ class QTSMSClient:
             verify=self.cert_path if self.cert_path else self.verify_ssl,
             transport=transport,
             headers=headers,
-            proxies=proxies,
+            proxy=proxies,
+            follow_redirects=True,
+
         )
 
     async def close(self):
@@ -349,12 +354,14 @@ class QTSMSClient:
         """
         if not self._client:
             await self._create_client()
+        post_data = self._get_auth_params()
+        post_data.update(action.form_post_fields())
+
+        logger.debug(post_data)
 
         if self.use_json or self.api_key:
             # JSON format request
-            post_data = self._get_auth_params()
-            post_data.update(action.form_post_fields())
-            
+
             try:
                 response = await self._client.post("", json=post_data)
                 response.raise_for_status()
@@ -369,8 +376,6 @@ class QTSMSClient:
                 raise QTSMSRequestError(f"Request failed: {str(e)}")
         else:
             # Form-urlencoded request (traditional)
-            post_data = self._get_auth_params()
-            post_data.update(action.form_post_fields())
 
             try:
                 response = await self._client.post("", data=post_data)

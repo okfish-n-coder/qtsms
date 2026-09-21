@@ -12,7 +12,7 @@ authors = [
     {name = "Based on original PHP library by ISBC Group"}
 ]
 maintainers = [
-    {name = "Python rewrite"}
+    {name = "Oleg Fish"}
 ]
 keywords = ["sms", "beeline", "a2p", "async", "httpx", "gateway", "messaging"]
 classifiers = [
@@ -47,9 +47,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/qtsms-client"
-Repository = "https://github.com/example/qtsms-client.git"
-Documentation = "https://github.com/example/qtsms-client#readme"
+Homepage = "https://github.com/okfish/qtsms-client"
+Repository = "https://github.com/okfish/qtsms-client.git"
+Documentation = "https://github.com/okfish/qtsms-client#readme"
 
 [tool.setuptools.packages.find]
 where = ["."]
