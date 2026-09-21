@@ -635,6 +635,46 @@ class QTSMSClient:
 
         return await self.execute_batch(actions, concurrency=concurrency)
 
+    async def send_multicast(
+        self,
+        message: str,
+        targets: List[str],
+        sender: Optional[str] = None,
+        post_id: Optional[str] = None,
+    ) -> List[str]:
+        """
+        Send the same message to multiple recipients.
+
+        Convenience method for sending identical messages to a list of phone numbers.
+        Each recipient receives the message as a separate SMS.
+
+        Args:
+            message: SMS text content to send to all recipients
+            targets: List of phone numbers to send the message to
+            sender: Sender name/number (applied to all messages)
+            post_id: Custom post identifier (applied to all messages)
+
+        Returns:
+            List of server responses in same order as input targets
+
+        Example:
+            >>> results = await client.send_multicast(
+            ...     message="Hello everyone!",
+            ...     targets=["+79991234567", "+79991234568", "+79991234569"],
+            ...     sender="MyCompany"
+            ... )
+        """
+        tasks = [
+            self.send_sms(
+                message=message,
+                target=target,
+                sender=sender,
+                post_id=post_id
+            )
+            for target in targets
+        ]
+        return await asyncio.gather(*tasks)
+
     async def get_balance(self) -> str:
         """
         Check account balance.
