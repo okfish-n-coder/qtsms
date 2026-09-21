@@ -125,6 +125,7 @@ class QTSMSClient:
     DEFAULT_TIMEOUT = 30.0
     DEFAULT_MAX_CONNECTIONS = 100
     DEFAULT_MAX_KEEPALIVE_CONNECTIONS = 50
+    DEFAULT_POOL_TIMEOUT = 60.0  # Longer timeout for initial connection pool setup
 
     def __init__(
         self,
