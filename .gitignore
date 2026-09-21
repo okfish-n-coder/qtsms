@@ -4,25 +4,26 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-.eggs/
-.egg-info/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git/modules/
-.DS_Store
-Thumbs.db
 
+# Test coverage
+.coverage
+coverage/
+htmlcov/
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# IDE
+.vscode/
 .idea/
-*.egg-info/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+```
