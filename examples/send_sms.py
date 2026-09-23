@@ -77,6 +77,59 @@ async def send_sms_async(client, phone, text, sender, post_id):
     )
 
 
+def create_client(user: str = None, password: str = None, token: str = None, host: str = None) -> QTSMSClient:
+    """Create QTSMSClient with appropriate authentication method."""
+    if token:
+        return QTSMSClient.with_token_auth(api_key=token, host=host)
+    return QTSMSClient(user=user, password=password, host=host)
+
+
+def print_success(response, verbose: bool = False):
+    """Print successful SMS send result."""
+    if hasattr(response, 'actions'):
+        for action in response.actions:
+            print(f"✓ Message sent successfully!")
+            print(f"  Phone: {action.phone}")
+            print(f"  Status: {action.status}")
+            if action.batch_id:
+                print(f"  Batch ID: {action.batch_id}")
+            if hasattr(action, 'id') and action.id:
+                print(f"  Message ID: {action.id}")
+    else:
+        print(f"✓ SMS sent successfully")
+        if isinstance(response, dict):
+            for key, value in response.items():
+                print(f"  {key}: {value}")
+
+
+def print_error(error: Exception, error_code_class, verbose: bool = False):
+    """Print error with description if available."""
+    error_msg = str(error)
+    print(f"✗ Error: {error_msg}", file=sys.stderr)
+    
+    # Try to find error code in message
+    for code, _ in error_code_class.get_all_errors().items():
+        if code.lower() in error_msg.lower():
+            description = error_code_class.get_error_message(code)
+            print(f"  Error code: {code}", file=sys.stderr)
+            print(f"  Description: {description}", file=sys.stderr)
+            break
+    
+    if verbose:
+        import traceback
+        traceback.print_exc()
+
+
+async def send_sms_async(client, phone, text, sender, batch_id):
+    """Send SMS using the async client."""
+    return await client.send_sms(
+        message=text,
+        target=phone,
+        sender=sender,
+        post_id=batch_id
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Send SMS via Beeline A2P Gateway",
