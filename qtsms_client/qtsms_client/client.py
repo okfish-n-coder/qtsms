@@ -641,18 +641,21 @@ class QTSMSClient:
         targets: List[str],
         sender: Optional[str] = None,
         post_id: Optional[str] = None,
+        concurrency: int = 10,
     ) -> List[str]:
         """
         Send the same message to multiple recipients.
 
         Convenience method for sending identical messages to a list of phone numbers.
-        Each recipient receives the message as a separate SMS.
+        Each recipient receives the message as a separate SMS. Requests are executed
+        concurrently via execute_batch with a semaphore limiting parallelism.
 
         Args:
             message: SMS text content to send to all recipients
             targets: List of phone numbers to send the message to
             sender: Sender name/number (applied to all messages)
             post_id: Custom post identifier (applied to all messages)
+            concurrency: Maximum concurrent requests (default: 10)
 
         Returns:
             List of server responses in same order as input targets
@@ -664,16 +667,11 @@ class QTSMSClient:
             ...     sender="MyCompany"
             ... )
         """
-        tasks = [
-            self.send_sms(
-                message=message,
-                target=target,
-                sender=sender,
-                post_id=post_id
-            )
+        actions = [
+            SendSMSAction(message=message, target=target, sender=sender, post_id=post_id)
             for target in targets
         ]
-        return await asyncio.gather(*tasks)
+        return await self.execute_batch(actions, concurrency=concurrency)
 
     async def get_balance(self) -> str:
         """
