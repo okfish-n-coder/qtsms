@@ -10,7 +10,7 @@ token-based authentication via X-ApiKey header.
 
 import asyncio
 # import json
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Tuple
 from urllib.parse import urlparse, urlunparse
 
 import logging
@@ -125,6 +125,7 @@ class QTSMSClient:
     DEFAULT_TIMEOUT = 30.0
     DEFAULT_MAX_CONNECTIONS = 100
     DEFAULT_MAX_KEEPALIVE_CONNECTIONS = 50
+    DEFAULT_POOL_TIMEOUT = 60.0  # Longer timeout for initial connection pool setup
 
     def __init__(
         self,
@@ -184,8 +185,6 @@ class QTSMSClient:
         self.max_keepalive_connections = max_keepalive_connections
 
         self._client: Optional[httpx.AsyncClient] = None
-        self._multipost_mode = False
-        self._pending_actions: List[BaseAction] = []
         
         # Validate auth configuration
         if not user and not password and not api_key:
@@ -557,7 +556,7 @@ class QTSMSClient:
                 return await self.execute(action)
 
         tasks = [execute_with_semaphore(action) for action in actions]
-        return await asyncio.gather(*tasks, return_exceptions=False)
+        return await asyncio.gather(*tasks, return_exceptions=True)
 
     # === High-level API methods ===
 
@@ -635,6 +634,43 @@ class QTSMSClient:
             action = SendSMSAction(**msg)
             actions.append(action)
 
+        return await self.execute_batch(actions, concurrency=concurrency)
+
+    async def send_multicast(
+        self,
+        message: str,
+        targets: List[Tuple[int,str]], # take targets as list of tuples (post_id, phone)
+        sender: Optional[str] = None,
+        # post_id: Optional[str] = None,
+        concurrency: int = 10,
+    ) -> List[str]:
+        """
+        Send the same message to multiple recipients.
+
+        Convenience method for sending identical messages to a list of phone numbers.
+        Each recipient receives the message as a separate SMS. Requests are executed
+        concurrently via execute_batch with a semaphore limiting parallelism.
+
+        Args:
+            message: SMS text content to send to all recipients
+            targets: List of tuples (post_id, phone_number) to send the message to
+            sender: Sender name/number (applied to all messages)
+            concurrency: Maximum concurrent requests (default: 10)
+
+        Returns:
+            List of server responses in same order as input targets
+
+        Example:
+            >>> results = await client.send_multicast(
+            ...     message="Hello everyone!",
+            ...     targets=["+79991234567", "+79991234568", "+79991234569"],
+            ...     sender="MyCompany"
+            ... )
+        """
+        actions = [
+            SendSMSAction(message=message, target=target[1], sender=sender, post_id=target[0])
+            for target in targets
+        ]
         return await self.execute_batch(actions, concurrency=concurrency)
 
     async def get_balance(self) -> str:
@@ -765,132 +801,3 @@ class QTSMSClient:
 
         action = BlacklistDeleteAction(phones=phones)
         return await self.execute(action)
-
-    # === Legacy compatibility methods (matching PHP interface) ===
-
-    def start_multipost(self):
-        """Enable multipost mode for batching actions."""
-        self._multipost_mode = True
-        self._pending_actions = []
-
-    async def process(self) -> List[str]:
-        """Process all pending actions in multipost mode."""
-        if not self._multipost_mode:
-            raise QTSMSException("Call start_multipost() first")
-
-        try:
-            results = await self.execute_batch(self._pending_actions)
-            return results
-        finally:
-            self._multipost_mode = False
-            self._pending_actions = []
-
-    def post_mes(
-        self,
-        mes: str,
-        target: str,
-        phl_codename: str,
-        sender: str,
-        post_id: Optional[str] = None,
-        period: Optional[str] = None,
-    ):
-        """Legacy method for adding SMS to multipost queue."""
-        action = SendSMSAction(
-            message=mes,
-            target=target,
-            phl_codename=phl_codename,
-            sender=sender,
-            post_id=post_id,
-            period=period,
-        )
-        if self._multipost_mode:
-            self._pending_actions.append(action)
-        else:
-            return self.execute(action)
-
-    def post_message(
-        self,
-        mes: str,
-        target: Union[str, List[str]],
-        sender: Optional[str] = None,
-        post_id: Optional[str] = None,
-        period: bool = False,
-    ):
-        """Legacy method for sending SMS."""
-        if isinstance(target, list):
-            target = ",".join(str(t) for t in target)
-        return self.post_mes(mes, target, None, sender, post_id, str(period) if period else None)
-
-    def post_message_phl(
-        self,
-        mes: str,
-        phl_codename: str,
-        sender: Optional[str] = None,
-        post_id: Optional[str] = None,
-        period: bool = False,
-    ):
-        """Legacy method for sending SMS to PHL codename."""
-        return self.post_mes(mes, None, phl_codename, sender, post_id, str(period) if period else None)
-
-    def status_sms(
-        self,
-        date_from: str,
-        date_to: str,
-        smstype: str,
-        sms_group_id: str,
-        sms_id: str,
-    ):
-        """Legacy method for checking status."""
-        action = StatusAction(
-            sms_id=sms_id or None,
-            sms_group_id=sms_group_id or None,
-            date_from=date_from or None,
-            date_to=date_to or None,
-        )
-        if self._multipost_mode:
-            self._pending_actions.append(action)
-        else:
-            return self.execute(action)
-
-    def status_sms_id(self, sms_id: str):
-        """Legacy method for checking status by SMS ID."""
-        return self.status_sms(None, None, None, None, sms_id)
-
-    def status_sms_group_id(self, sms_group_id: str):
-        """Legacy method for checking status by group ID."""
-        return self.status_sms(None, None, sms_group_id, None, None)
-
-    def status_sms_date(self, date_from: str, date_to: str, smstype: str = "SENDSMS"):
-        """Legacy method for checking status by date range."""
-        return self.status_sms(date_from, date_to, smstype, None, None)
-
-    def get_balance_legacy(self):
-        """Legacy method for getting balance."""
-        action = BalanceAction()
-        if self._multipost_mode:
-            self._pending_actions.append(action)
-        else:
-            return self.execute(action)
-
-    def inbox_sms(
-        self,
-        new_only: bool = False,
-        sib_num: str = None,
-        date_from: str = None,
-        date_to: str = None,
-        phone: str = None,
-        prefix: str = None,
-    ):
-        """Legacy method for getting inbox."""
-        action = InboxAction(
-            sib_num=sib_num,
-            new_only="1" if new_only else None,
-            date_from=date_from,
-            date_to=date_to,
-            phone=phone,
-            prefix=prefix,
-        )
-        if self._multipost_mode:
-            self._pending_actions.append(action)
-        else:
-            return self.execute(action)

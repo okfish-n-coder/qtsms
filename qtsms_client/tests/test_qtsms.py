@@ -295,7 +295,7 @@ class TestQTSMSClient:
 
     @pytest.mark.asyncio
     async def test_multipost_mode(self, client_config):
-        """Test multipost mode."""
+        """Test send_sms_batch for multiple messages."""
         with patch('httpx.AsyncClient') as mock_client_class:
             mock_response = MagicMock()
             mock_response.text = "OK"
@@ -306,18 +306,17 @@ class TestQTSMSClient:
             mock_client_class.return_value = mock_client
 
             async with QTSMSClient(**client_config) as client:
-                client.start_multipost()
-                client.post_mes("Hello 1", "+79991234567", None, "Sender")
-                client.post_mes("Hello 2", "+79991234568", None, "Sender")
+                # Test send_sms_batch for multiple messages
+                await client.send_sms_batch([
+                    {"message": "Hello 1", "target": "+79991234567", "sender": "Sender"},
+                    {"message": "Hello 2", "target": "+79991234568", "sender": "Sender"},
+                ])
 
-                results = await client.process()
-
-                assert len(results) == 2
                 assert mock_client.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_legacy_methods(self, client_config):
-        """Test legacy PHP-compatible methods."""
+    async def test_async_methods(self, client_config):
+        """Test modern async methods."""
         with patch('httpx.AsyncClient') as mock_client_class:
             mock_response = MagicMock()
             mock_response.text = "OK"
@@ -328,16 +327,16 @@ class TestQTSMSClient:
             mock_client_class.return_value = mock_client
 
             async with QTSMSClient(**client_config) as client:
-                # Test post_message
-                await client.post_message("Hello", "+79991234567", "Sender")
+                # Test send_sms
+                await client.send_sms(message="Hello", target="+79991234567", sender="Sender")
                 assert mock_client.post.call_count == 1
 
-                # Test status_sms_id
-                await client.status_sms_id("12345")
+                # Test get_status
+                await client.get_status(sms_id="12345")
                 assert mock_client.post.call_count == 2
 
-                # Test get_balance_legacy
-                await client.get_balance_legacy()
+                # Test get_balance
+                await client.get_balance()
                 assert mock_client.post.call_count == 3
 
 
